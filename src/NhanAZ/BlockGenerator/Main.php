@@ -4,185 +4,150 @@ declare(strict_types=1);
 
 namespace NhanAZ\BlockGenerator;
 
-use NhanAZ\libBedrock\StringToBlock;
+use InvalidArgumentException;
 use pocketmine\block\Block;
 use pocketmine\block\BlockTypeIds;
 use pocketmine\block\Fence;
-use pocketmine\block\Liquid;
-use pocketmine\block\VanillaBlocks;
 use pocketmine\block\Water;
 use pocketmine\event\block\BlockUpdateEvent;
 use pocketmine\event\Listener;
+use pocketmine\item\ItemBlock;
+use pocketmine\item\LegacyStringToItemParser;
+use pocketmine\item\LegacyStringToItemParserException;
+use pocketmine\item\StringToItemParser;
+use pocketmine\math\Facing;
 use pocketmine\plugin\PluginBase;
 use pocketmine\scheduler\ClosureTask;
 use pocketmine\world\Position;
 use pocketmine\world\sound\FizzSound;
 
-class Main extends PluginBase implements Listener {
+final class Main extends PluginBase implements Listener {
 
-	/** @var array<Block> $blocks */
-	private $blocks = [];
+	/** @var list<array{limit: float, block: Block}> */
+	private array $weightedBlocks = [];
+	private float $totalWeight = 0.0;
+	private string $mode;
+	private bool $checkSource;
+	private bool $produceSound;
+	private int $delayTicks;
 
 	protected function onEnable(): void {
 		$this->saveDefaultConfig();
+		$this->loadConfiguration();
 		$this->getServer()->getPluginManager()->registerEvents($this, $this);
-		$this->generalCheck();
-		$this->buildBlocks();
 	}
 
-	private function generalCheck(): void {
-		$blocks = $this->getConfig()->get("blocks");
-		if (!is_array($blocks)) {
-			throw new \Exception("The value of the `blocks` field must be an array!");
+	private function parseBlock(string $name): Block {
+		try {
+			$item = StringToItemParser::getInstance()->parse($name)
+				?? LegacyStringToItemParser::getInstance()->parse($name);
+		} catch (LegacyStringToItemParserException $e) {
+			throw new InvalidArgumentException("Unknown block in configuration: {$name}", 0, $e);
 		}
-		$totalPercentage = 0;
-		foreach ($blocks as $block => $percentage) {
-			$totalPercentage += $percentage;
-			StringToBlock::parse($block);
-			if (!is_numeric($percentage)) {
-				throw new \Exception("The percentage of \"$block\" must be numeric!");
+		if (!$item instanceof ItemBlock) {
+			throw new InvalidArgumentException("Configured item is not a block: {$name}");
+		}
+		return $item->getBlock();
+	}
+
+	private function loadConfiguration(): void {
+		$config = $this->getConfig();
+		$blocks = $config->get('blocks');
+		if (!is_array($blocks) || $blocks === []) {
+			throw new InvalidArgumentException('Configure at least one block weight');
+		}
+		foreach ($blocks as $name => $weight) {
+			if (!is_string($name) || !is_numeric($weight)) {
+				throw new InvalidArgumentException('Each block needs a numeric percentage');
 			}
-			if ($percentage <= 0) {
-				throw new \Exception("The percentage of \"$block\" must be > 0!");
+			$value = (float) $weight;
+			if (!is_finite($value) || $value <= 0.0) {
+				throw new InvalidArgumentException("The percentage for {$name} must be finite and positive");
 			}
-			if ($percentage < 0.1 and $this->getConfig()->get("percentageWarning")) {
-				$this->getLogger()->warning("The percentage of \"$block: $percentage%\" should be > 0.1%!");
-			}
-		}
-		if ($totalPercentage != 100) {
-			throw new \Exception("Invalid total percentage. The total of the percentages of the blocks must be 100%!");
-		}
-		if ($this->getMinValueFromAssociativeArray($blocks) == PHP_INT_MAX) {
-			throw new \Exception("Something is wrong with the percentage of blocks!");
-		}
-		if ($this->getConfig()->get("delayTime") < 0) {
-			throw new \Exception("Delay time (seconds) for a new block to be produced must be > 0!");
-		}
-	}
-
-	/**
-	 * Get the minimum value from an associative array.
-	 *
-	 * @param array<string, float> $array The input associative array.
-	 *
-	 * @return float The minimum value from the associative array.
-	 */
-	private function getMinValueFromAssociativeArray(array $array): float {
-		$min = PHP_INT_MAX;
-		foreach ($array as $value) {
-			$min = min($min, $value);
-		}
-		return $min;
-	}
-
-	/**
-	 * Convert a float to the hacking format.
-	 * Example: 0.9 return 10, 0.98 return 100, 0.987 return 1000,...
-	 * If !($number > 0 and $number < 1) return 1.
-	 * */
-	private function floatToHachkingFormat(float $number): float {
-		if ($number > 0 and $number < 1) {
-			/** Convert to string, get the decimal part and calculate its length */
-			$number = strval($number);
-			$number = explode(".", $number);
-			$number = $number[1];
-			$number = strlen($number);
-			/** Repeat zeroes as many times as the decimal part length */
-			$number = str_repeat("0", $number);
-			/** Concatenate the zeroes to 1 and convert back to int */
-			$number = "1" . $number;
-			$number = intval($number);
-			return $number;
-		}
-		/** Return 1 if float is already in hachking format */
-		return 1;
-	}
-
-	private function buildBlocks(): void {
-		$blocks = $this->getConfig()->get("blocks");
-		if (!is_array($blocks)) {
-			throw new \Exception("The value of the `blocks` field must be an array!");
-		}
-		$min = $this->getMinValueFromAssociativeArray($blocks);
-		$min = $this->floatToHachkingFormat($min);
-		foreach ($blocks as $block => $percentage) {
-			$numberOfElements = round($percentage * $min);
-			for ($i = 0; $i < $numberOfElements; $i++) {
-				array_push($this->blocks, $block);
+			$this->totalWeight += $value;
+			$this->weightedBlocks[] = ['limit' => $this->totalWeight, 'block' => $this->parseBlock($name)];
+			if ($value < 0.1 && $config->get('percentageWarning') === true) {
+				$this->getLogger()->warning("The percentage for {$name} is below 0.1%");
 			}
 		}
-		shuffle($this->blocks);
+		if (abs($this->totalWeight - 100.0) > 0.000001) {
+			throw new InvalidArgumentException('Block percentages must total 100%');
+		}
+		$mode = $config->get('generatorMode');
+		if ($mode !== 'interact' && $mode !== 'nonInteract') {
+			throw new InvalidArgumentException('generatorMode must be interact or nonInteract');
+		}
+		$this->mode = $mode;
+		$checkSource = $config->get('checkSource');
+		$produceSound = $config->get('produceSound');
+		if (!is_bool($checkSource) || !is_bool($produceSound)) {
+			throw new InvalidArgumentException('checkSource and produceSound must be booleans');
+		}
+		$this->checkSource = $checkSource;
+		$this->produceSound = $produceSound;
+		$delay = $config->get('delayTime');
+		if (!is_numeric($delay) || !is_finite((float) $delay) || (float) $delay < 0.0) {
+			throw new InvalidArgumentException('delayTime must be a finite nonnegative number of seconds');
+		}
+		$this->delayTicks = $delay == 0 ? 0 : max(1, (int) round((float) $delay * 20));
 	}
 
-	private function setBlock(Position $blockPos): void {
-		$block = strval($this->blocks[array_rand($this->blocks)]);
-		$block = StringToBlock::parse($block);
-		$blockPos->getWorld()->setBlock($blockPos, $block, false);
+	private function pickBlock(): Block {
+		$roll = random_int(0, PHP_INT_MAX - 1) / PHP_INT_MAX * $this->totalWeight;
+		foreach ($this->weightedBlocks as $entry) {
+			if ($roll < $entry['limit']) {
+				return $entry['block'];
+			}
+		}
+		throw new \LogicException('No configured block matched the random weight');
 	}
 
-	private function playFizzSound(Position $blockPos): void {
-		if ($this->getConfig()->get("produceSound")) {
-			$blockPos->getWorld()->addSound($blockPos->add(0.5, 0.5, 0.5), new FizzSound());
+	private function eligibleTarget(Fence $fence, int $facing): ?Block {
+		$target = $fence->getSide($facing);
+		$water = $this->mode === 'interact' ? $target : $fence->getSide($facing, 2);
+		if (!$water instanceof Water || ($this->checkSource && $water->isSource())) {
+			return null;
+		}
+		if ($this->mode === 'interact' && !($target instanceof Water)) {
+			return null;
+		}
+		if ($this->mode === 'nonInteract' && $target->getTypeId() !== BlockTypeIds::AIR) {
+			return null;
+		}
+		return $target;
+	}
+
+	private function generate(Position $fencePosition, int $facing): void {
+		if (!$fencePosition->isValid()) {
+			return;
+		}
+		$fence = $fencePosition->getWorld()->getBlock($fencePosition);
+		if (!$fence instanceof Fence || ($target = $this->eligibleTarget($fence, $facing)) === null) {
+			return;
+		}
+		$position = $target->getPosition();
+		$position->getWorld()->setBlock($position, $this->pickBlock(), false);
+		if ($this->produceSound) {
+			$position->getWorld()->addSound($position->add(0.5, 0.5, 0.5), new FizzSound());
 		}
 	}
 
 	public function onBlockUpdate(BlockUpdateEvent $event): void {
-		$block = $event->getBlock();
-		if ($block instanceof Fence) {
-			$mode = $this->getConfig()->get("generatorMode");
-			$checkSource = $this->getConfig()->get("checkSource");
-			$delayTime = $this->getConfig()->get("delayTime");
-			if ($mode == "nonInteract") {
-				foreach ($block->getAllSides() as $facing => $block) {
-					$side = $block->getSide($facing);
-					if ($side instanceof Water or $block instanceof Water) {
-						if ($checkSource) {
-							if ($block instanceof Liquid) {
-								if ($block->isSource()) {
-									continue;
-								}
-							}
-						}
-						if ($block->getTypeId() === BlockTypeIds::AIR or $block->getTypeId() === BlockTypeIds::WATER) {
-							if ($delayTime > 0) {
-								$this->getScheduler()->scheduleDelayedTask(new ClosureTask(function () use ($block): void {
-									$this->setBlock($block->getPosition());
-									$this->playFizzSound($block->getPosition());
-								}), intval($delayTime) * 20);
-							} elseif ($delayTime == 0) {
-								$this->setBlock($block->getPosition());
-								$this->playFizzSound($block->getPosition());
-							}
-						}
-					}
-				}
-				return;
+		$fence = $event->getBlock();
+		if (!$fence instanceof Fence) {
+			return;
+		}
+		foreach (Facing::ALL as $facing) {
+			if ($this->eligibleTarget($fence, $facing) === null) {
+				continue;
 			}
-
-			if ($mode == "interact") {
-				foreach ($block->getAllSides() as $block) {
-					if ($block instanceof Water) {
-						if ($checkSource) {
-							if ($block instanceof Liquid) {
-								if ($block->isSource()) {
-									continue;
-								}
-							}
-						}
-						if ($block->getTypeId() === BlockTypeIds::AIR or $block->getTypeId() === BlockTypeIds::WATER) {
-							if ($delayTime > 0) {
-								$this->getScheduler()->scheduleDelayedTask(new ClosureTask(function () use ($block): void {
-									$this->setBlock($block->getPosition());
-									$this->playFizzSound($block->getPosition());
-								}), intval($delayTime) * 20);
-							} elseif ($delayTime == 0) {
-								$this->setBlock($block->getPosition());
-								$this->playFizzSound($block->getPosition());
-							}
-						}
-					}
-				}
-				return;
+			$position = $fence->getPosition()->asPosition();
+			if ($this->delayTicks > 0) {
+				$this->getScheduler()->scheduleDelayedTask(new ClosureTask(function () use ($position, $facing): void {
+					$this->generate($position, $facing);
+				}), $this->delayTicks);
+			} else {
+				$this->generate($position, $facing);
 			}
 		}
 	}

@@ -1,12 +1,7 @@
 ---
-# [!!!] The configuration has been set up thoughtfully, you should only care about the `blocks` field and edit the other fields if and only if you really know what you are doing.
-
-# Format:
-# - "block popup mame": percentage => Example: "stone": 100
-# - "id:meta": percentage => Example: "1:0": 100
-#
-# The total of the percentages of the blocks must be 100%.
-# Minimum percentage should be 0.1, should avoid set percentage < 0.1.
+# Map server block names to positive, finite percentages that total 100.
+# Legacy item IDs such as "1:0" are accepted when supported by the server parser.
+# Weights below 0.1% may be hard to observe during gameplay.
 blocks:
   "cobblestone": 25.0
   "cobbled_deepslate": 5.0
@@ -25,27 +20,19 @@ blocks:
   "lapis_lazuli_ore": 3.0
   "deepslate_lapis_lazuli_ore": 2.0
 
-# interact : Produce blocks when water interacts with the fence. (This increases block production delay to 0.25 seconds. Works the same way lava and water produce stone, cobblestone,...).
-# nonInteract : Produce blocks when the water is one block away from the fence. (This mode will not check if the water actually interacts with the fence, this mode has no time delay when new blocks are produced).
+# interact replaces water directly beside the fence.
+# nonInteract fills an air gap beside the fence when water is two blocks away.
 generatorMode: interact
 
-# - true: Sound sent to players when a new block is produced.
-# - false: No sound sent to players when a new block is produced.
-# Default sound: fizz sound (Sound when lava interacts with water) [Listen here fizz sound: https://www.youtube.com/watch?v=VWoDIbAvZIY&ab_channel=SoundLibrary]
-# [?] Because PocketMine does not support SoundFactory, it is currently not possible to set a custom sound using the profile. (I hate using libraries)
+# Play the server's fizz sound when a block is produced.
 produceSound: false
 
-# source water block: Water can be used to scoop up with a bucket.
-# - true : Does not produce blocks if the water that interacts with the fence is the source water block.
-# - false : Produce blocks even if the water that interacts with the fence is the source water block.
+# Skip generation when the relevant water is a source block.
 checkSource: false
 
-# - true : An warning will be sent to the console when the percentage of a certain block is not reasonable.
-# - false : No warning will be sent to the console when the percentage of a certain block is not reasonable.
+# Log a warning when a configured block weight is below 0.1%.
 percentageWarning: true
 
-# [!] Warning: This feature is unstable!
-# Delay time (seconds) for a new block to be produced.
-# Delay time must be > 0!
-delayTime: 0 # Seconds
+# Delay generation by this many seconds. Zero places the block immediately.
+delayTime: 0
 ...
