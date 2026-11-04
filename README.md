@@ -1,8 +1,15 @@
 # BlockGenerator
 
-BlockGenerator is an Axolotl-PM plugin that creates a randomly weighted block beside a fence when water meets the configured conditions.
+Generates weighted blocks beside fences when water meets configured conditions on Axolotl-PM
 
-![A fence and water block generator](https://user-images.githubusercontent.com/60387689/215071694-7d4d28d6-9961-4c8a-bb01-5a6642bd1c40.jpg)
+[![CI](https://github.com/NhanAZ-Plugins/BlockGenerator/actions/workflows/build.yml/badge.svg)](https://github.com/NhanAZ-Plugins/BlockGenerator/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/NhanAZ-Plugins/BlockGenerator)](https://github.com/NhanAZ-Plugins/BlockGenerator/releases/latest)
+[![License](https://img.shields.io/github/license/NhanAZ-Plugins/BlockGenerator)](https://github.com/NhanAZ-Plugins/BlockGenerator/blob/master/LICENSE)
+[![Discord](https://img.shields.io/discord/986553214889517088?label=Discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/j2X83ujT6c)
+
+## Overview
+
+This plugin targets the PocketMine-MP and Axolotl-PM API 5 ecosystem and is maintained under [NhanAZ-Plugins](https://github.com/NhanAZ-Plugins).
 
 ## Requirements and compatibility
 
