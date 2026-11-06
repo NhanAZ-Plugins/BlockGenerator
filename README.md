@@ -33,7 +33,7 @@ There are no commands or permissions. A generator is triggered by a block update
 
 ## Build and development
 
-The [build workflow](.github/workflows/build.yml) tests the water modes and delayed placement, runs PHPStan at maximum level, and uses [DevTools](https://github.com/NhanAZ/DevTools) to build and validate the PHAR. The workflow pins its tools and server source. It leaves GitHub's default run title in place so push runs remain identifiable by commit message.
+The [build workflow](.github/workflows/build.yml) tests the water modes and delayed placement, runs PHPStan at maximum level, and uses [DevTools](https://github.com/AxolotlBucketLabs/DevTools) to build and validate the PHAR. The workflow pins its tools and server source. It leaves GitHub's default run title in place so push runs remain identifiable by commit message.
 
 ## License and support
 
